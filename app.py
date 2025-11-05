@@ -77,6 +77,57 @@ def main():
         if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
             process_data(end_conversation)
 
+        # 대화 기록 관리 섹션
+        st.divider()
+        with st.expander("📚 대화 기록 정리"):
+            if "sheet" in st.session_state and user_name:
+                if st.button("대화 목록 새로고침", key="refresh_sessions"):
+                    st.session_state["sessions"] = gs.get_conversation_sessions(st.session_state["sheet"])
+
+                # 세션 목록 표시
+                if "sessions" in st.session_state and st.session_state["sessions"]:
+                    st.write(f"총 {len(st.session_state['sessions'])}개의 대화 세션")
+
+                    for idx, session in enumerate(st.session_state["sessions"]):
+                        with st.container():
+                            col1, col2 = st.columns([3, 1])
+
+                            with col1:
+                                st.write(f"**{session['start_time']} - {session['end_time']}**")
+                                st.caption(f"메시지 {session['message_count']}개")
+                                st.caption(f"{session['first_message']}")
+
+                            with col2:
+                                # 제목 생성 버튼
+                                if st.button("📝", key=f"gen_title_{idx}", help="제목 생성"):
+                                    with st.spinner("제목 생성 중..."):
+                                        messages = gs.get_session_messages(
+                                            st.session_state["sheet"],
+                                            session["row_start"],
+                                            session["row_end"]
+                                        )
+                                        title = gs.generate_session_title(
+                                            messages,
+                                            st.session_state["bot"],
+                                            st.session_state["setupInfo"]["model"]
+                                        )
+                                        gs.save_session_title(
+                                            st.session_state["sheet"],
+                                            session["row_start"],
+                                            title
+                                        )
+                                        st.success(f"제목: {title}")
+                                        time.sleep(2)
+                                        st.rerun()
+
+                            st.divider()
+                elif "sessions" in st.session_state:
+                    st.info("대화 기록이 없습니다.")
+                else:
+                    st.info("'대화 목록 새로고침' 버튼을 눌러주세요.")
+            else:
+                st.warning("대화명을 먼저 입력해주세요.")
+
     # 시스템 메시지 초기화
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "system", "content": st.session_state["setupInfo"]['system']}]

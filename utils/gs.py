@@ -202,3 +202,173 @@ def get_summary_sheet(doc):
         '수업요약' 시트를 리턴
     """
     return doc.worksheet("수업요약")
+
+def get_conversation_sessions(sheet):
+    """
+    워크시트에서 대화 기록을 읽어와 시간별로 세션을 그룹핑하는 함수입니다.
+
+    Parameters:
+        sheet (gspread.Worksheet): 대화 기록이 저장된 워크시트
+
+    Returns:
+        list: 세션 정보를 담은 딕셔너리 리스트
+            각 세션은 다음 키를 포함:
+            - session_id: 세션 고유 ID (시작 행 번호)
+            - start_time: 세션 시작 시간
+            - end_time: 세션 종료 시간
+            - message_count: 메시지 개수
+            - first_message: 첫 번째 사용자 메시지 (미리보기용)
+
+    Note:
+        - 30분 이상 간격이 있으면 새로운 세션으로 간주
+        - 시스템 메시지는 제외
+    """
+    from datetime import datetime, timedelta
+
+    # 모든 데이터 가져오기 (A, B, C 컬럼: 시간, 역할, 내용)
+    all_data = sheet.get_all_values()
+
+    if len(all_data) <= 1:  # 헤더만 있거나 비어있음
+        return []
+
+    sessions = []
+    current_session = None
+    last_time = None
+    SESSION_GAP_MINUTES = 30  # 30분 간격으로 세션 구분
+
+    for idx, row in enumerate(all_data[1:], start=2):  # 헤더 제외, 행 번호는 2부터
+        if len(row) < 3:
+            continue
+
+        time_str, role, content = row[0], row[1], row[2]
+
+        if not time_str or not content:
+            continue
+
+        try:
+            # 시간 파싱 (HH:MM 형식)
+            current_time = datetime.strptime(time_str, "%H:%M")
+
+            # 새 세션 시작 조건: 첫 메시지이거나 30분 이상 간격
+            if current_session is None:
+                current_session = {
+                    "session_id": idx,
+                    "start_time": time_str,
+                    "end_time": time_str,
+                    "message_count": 1,
+                    "first_message": content[:50] + "..." if len(content) > 50 else content,
+                    "row_start": idx,
+                    "row_end": idx
+                }
+                last_time = current_time
+            else:
+                # 시간 차이 계산
+                time_diff = abs((current_time - last_time).total_seconds() / 60)
+
+                if time_diff > SESSION_GAP_MINUTES:
+                    # 이전 세션 저장
+                    sessions.append(current_session)
+                    # 새 세션 시작
+                    current_session = {
+                        "session_id": idx,
+                        "start_time": time_str,
+                        "end_time": time_str,
+                        "message_count": 1,
+                        "first_message": content[:50] + "..." if len(content) > 50 else content,
+                        "row_start": idx,
+                        "row_end": idx
+                    }
+                else:
+                    # 현재 세션에 추가
+                    current_session["end_time"] = time_str
+                    current_session["message_count"] += 1
+                    current_session["row_end"] = idx
+
+                last_time = current_time
+
+        except ValueError:
+            # 시간 파싱 실패 시 건너뛰기
+            continue
+
+    # 마지막 세션 저장
+    if current_session is not None:
+        sessions.append(current_session)
+
+    return sessions
+
+def get_session_messages(sheet, row_start, row_end):
+    """
+    특정 세션의 모든 메시지를 가져오는 함수입니다.
+
+    Parameters:
+        sheet (gspread.Worksheet): 워크시트
+        row_start (int): 세션 시작 행
+        row_end (int): 세션 종료 행
+
+    Returns:
+        list: 메시지 리스트 [{"role": "user", "content": "..."}, ...]
+    """
+    messages = []
+
+    # 해당 범위의 데이터 가져오기
+    if row_start == row_end:
+        range_str = f"A{row_start}:C{row_start}"
+    else:
+        range_str = f"A{row_start}:C{row_end}"
+
+    data = sheet.get(range_str)
+
+    for row in data:
+        if len(row) >= 3:
+            role = "user" if row[1] == "USER" else "assistant"
+            messages.append({"role": role, "content": row[2]})
+
+    return messages
+
+def generate_session_title(messages, client, model):
+    """
+    대화 내용을 분석하여 적절한 제목을 생성하는 함수입니다.
+
+    Parameters:
+        messages (list): 메시지 리스트
+        client: Anthropic API 클라이언트
+        model (str): 사용할 AI 모델
+
+    Returns:
+        str: 생성된 제목
+    """
+    # 대화 내용 요약을 위한 프롬프트
+    conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[:10]])  # 처음 10개만
+
+    prompt = f"""다음 대화 내용을 분석하여 간단하고 명확한 제목을 한국어로 생성해주세요.
+제목은 20자 이내로 작성하고, 대화의 핵심 주제를 나타내야 합니다.
+제목만 출력하고 다른 설명은 하지 마세요.
+
+대화 내용:
+{conversation_text}"""
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=100,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        title = response.content[0].text.strip()
+        # 따옴표 제거
+        title = title.strip('"').strip("'")
+        return title
+    except Exception as e:
+        return f"대화 세션 (오류: {str(e)[:20]})"
+
+def save_session_title(sheet, row_num, title):
+    """
+    생성된 제목을 Google Sheets의 D열에 저장하는 함수입니다.
+
+    Parameters:
+        sheet (gspread.Worksheet): 워크시트
+        row_num (int): 저장할 행 번호
+        title (str): 저장할 제목
+    """
+    sheet.update_cell(row_num, 4, title)  # D열 (4번째 컬럼)
