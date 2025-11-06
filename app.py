@@ -27,7 +27,7 @@ def initialize(api_key, nick_name):
 
     이 함수는 이미 초기화가 완료된 경우 아무 작업도 수행하지 않습니다.
     """
-    if "bot" and "sheet" in st.session_state:
+    if "bot" in st.session_state and "sheet" in st.session_state:
         return
     
     log_p("초기화 시작")
