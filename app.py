@@ -1,4 +1,3 @@
-import functools
 import streamlit as st
 from streamlit import logger
 import anthropic
@@ -128,7 +127,6 @@ def main():
             disable_input(False)
             st.rerun()
 
-@st.cache_data 
 def log_p(message):
     """
     콘솔에 메세지 출력하기
@@ -184,17 +182,6 @@ def execute_prompt(messages):
         pass
 
     return None
-
-def wiget_on_off(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        st.session_state["processing"] = True
-        
-        result = func(*args, **kwargs)
-
-        st.session_state["processing"] = False
-        return result    
-    return wrapper
 
 def message_processing(stream, output = None):
     """
