@@ -43,9 +43,10 @@ def get_authorize():
     # gspread 클라이언트 생성
     return gspread.authorize(creds)
 
+@st.cache_data(ttl=300)  # 5분간 캐싱
 def getSetupInfo():
     """
-    Google Sheets에서 설정 정보를 가져오는 함수입니다.
+    Google Sheets에서 설정 정보를 가져오는 함수입니다 (5분간 캐싱됨).
 
     Returns:
         dict: 다음 키를 포함하는 설정 정보 딕셔너리

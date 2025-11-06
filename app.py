@@ -148,13 +148,22 @@ def execute_prompt(messages):
     """
     setupInfo = st.session_state['setupInfo']
     client = st.session_state["bot"]
-    
+
     try:
+        # 시스템 프롬프트 캐싱 적용 (토큰 비용 90% 절감)
+        system_with_cache = [
+            {
+                "type": "text",
+                "text": setupInfo['system'],
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+
         stream = client.messages.create(
                         model = setupInfo['model'],
                         max_tokens = setupInfo['max_tokens'],
                         temperature = setupInfo['temperature'],
-                        system = setupInfo['system'],
+                        system = system_with_cache,
                         messages = messages,
                         stream = setupInfo['stream']
         )
