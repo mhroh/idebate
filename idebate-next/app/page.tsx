@@ -13,6 +13,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [evaluating, setEvaluating] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -84,6 +85,44 @@ export default function Home() {
     }
   }
 
+  const endConversation = async () => {
+    if (!sessionId) return
+
+    if (!confirm('대화를 종료하고 평가를 받으시겠습니까?')) return
+
+    setEvaluating(true)
+
+    try {
+      // 세션 종료
+      await fetch('/api/session', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
+
+      // 평가 생성
+      const res = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
+
+      const data = await res.json()
+      if (res.ok) {
+        alert(`평가 완료!\n\n종합평가: ${data.summary}\n\n평어: ${data.grade}`)
+        setSessionId(null)
+        setMessages([])
+        setStudentName('')
+      } else {
+        alert(data.error || '평가 생성 실패')
+      }
+    } catch (error) {
+      alert('서버 연결 실패')
+    } finally {
+      setEvaluating(false)
+    }
+  }
+
   if (!sessionId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -123,18 +162,27 @@ export default function Home() {
             <h1 className="text-xl font-bold text-gray-800">iDebate</h1>
             <p className="text-sm text-gray-600">{studentName}</p>
           </div>
-          <button
-            onClick={() => {
-              if (confirm('대화를 종료하시겠습니까?')) {
-                setSessionId(null)
-                setMessages([])
-                setStudentName('')
-              }
-            }}
-            className="text-sm text-red-600 hover:text-red-700 font-medium"
-          >
-            종료
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={endConversation}
+              disabled={evaluating}
+              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+            >
+              {evaluating ? '평가 중...' : '📝 평가 받기'}
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('평가 없이 종료하시겠습니까?')) {
+                  setSessionId(null)
+                  setMessages([])
+                  setStudentName('')
+                }
+              }}
+              className="text-sm text-red-600 hover:text-red-700 font-medium"
+            >
+              종료
+            </button>
+          </div>
         </div>
       </div>
 
@@ -187,13 +235,13 @@ export default function Home() {
             placeholder="메시지를 입력하세요..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && !loading && sendMessage()}
-            disabled={loading}
+            onKeyPress={(e) => e.key === 'Enter' && !loading && !evaluating && sendMessage()}
+            disabled={loading || evaluating}
             className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:opacity-50"
           />
           <button
             onClick={sendMessage}
-            disabled={loading || !input.trim()}
+            disabled={loading || evaluating || !input.trim()}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             전송
