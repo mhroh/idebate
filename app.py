@@ -8,8 +8,23 @@ import time
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
+# 대화 내역 길이 제한 (메모리 최적화)
+MAX_CONVERSATION_LENGTH = 50  # 시스템 메시지 + 최근 50개 대화만 유지
+
 def disable_input(value):
     st.session_state.processing = value
+
+def trim_conversation_history():
+    """
+    대화 내역이 너무 길어지면 오래된 대화를 제거하여 메모리를 최적화합니다.
+    시스템 메시지(첫 번째)는 항상 유지하고, 최근 N개의 대화만 유지합니다.
+    """
+    if "messages" in st.session_state and len(st.session_state.messages) > MAX_CONVERSATION_LENGTH:
+        # 시스템 메시지(0번 인덱스) + 최근 대화들만 유지
+        system_msg = st.session_state.messages[0]
+        recent_msgs = st.session_state.messages[-(MAX_CONVERSATION_LENGTH-1):]
+        st.session_state.messages = [system_msg] + recent_msgs
+        log_p(f"대화 내역 정리: {len(recent_msgs)}개 메시지 유지")
 
 def initialize(api_key, nick_name):
     """
@@ -97,11 +112,12 @@ def main():
             return
         
         add_message(st.session_state.messages, "user", prompt)
-        
+        trim_conversation_history()  # 메모리 최적화
+
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # OpenAI 모델 호출
+        # Claude 모델 호출
         if "api_key" in st.session_state:
             full_response = ""
             # setupInfo = st.session_state['setupInfo']
@@ -241,36 +257,76 @@ def end_conversation():
     """
     log_p("평가 시작")
 
-    # TODO 종합평가, 평어를 시트에 저장
-    sheet = gs.get_summary_sheet(st.session_state["doc"])
-    setupInfo = st.session_state['setupInfo']
-    a_p = setupInfo["a_p"]
-    e_p = setupInfo["e_p"]
-    messages = st.session_state.messages[1:]
-    full_response = ""
+    try:
+        # 종합평가, 평어를 시트에 저장
+        sheet = gs.get_summary_sheet(st.session_state["doc"])
+        setupInfo = st.session_state['setupInfo']
+        a_p = setupInfo["a_p"]
+        e_p = setupInfo["e_p"]
+        messages = st.session_state.messages[1:]
+        full_response = ""
 
-    # 종합평가
-    st.success("1/2 작업중......")
-    add_message(messages, "user", a_p, withGS = False)
-    stream = execute_prompt(messages)
-    full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
-    
-    cell = sheet.find(st.session_state["user_name_1"], in_column = 1)
-    sheet.update_cell(cell.row, cell.col + 1, full_response)
-    st.success("1/2 완료")
-    
-    # 평어
-    st.success("2/2 작업중......")
-    full_response = ""
-    add_message(messages, "user", e_p, withGS = False)
-    stream = execute_prompt(messages)
-    full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
+        # 종합평가
+        st.success("1/2 작업중......")
+        add_message(messages, "user", a_p, withGS = False)
+        stream = execute_prompt(messages)
 
-    sheet.update_cell(cell.row, cell.col + 2, full_response)
-    st.success("2/2 완료")
-    log_p("평가 완료")
+        if stream is None:
+            st.error("평가 생성 중 오류가 발생했습니다.")
+            return
+
+        full_response = message_processing(stream)
+        add_message(messages, "assistant", full_response, withGS = False)
+
+        # 재시도 로직으로 Google Sheets 저장
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                cell = sheet.find(st.session_state["user_name_1"], in_column = 1)
+                sheet.update_cell(cell.row, cell.col + 1, full_response)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    st.warning(f"⚠️ 저장 재시도 중... ({attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)
+                else:
+                    st.error(f"평가 저장 실패: {str(e)}")
+                    raise
+
+        st.success("1/2 완료")
+
+        # 평어
+        st.success("2/2 작업중......")
+        full_response = ""
+        add_message(messages, "user", e_p, withGS = False)
+        stream = execute_prompt(messages)
+
+        if stream is None:
+            st.error("평어 생성 중 오류가 발생했습니다.")
+            return
+
+        full_response = message_processing(stream)
+        add_message(messages, "assistant", full_response, withGS = False)
+
+        # 재시도 로직으로 Google Sheets 저장
+        for attempt in range(max_retries):
+            try:
+                sheet.update_cell(cell.row, cell.col + 2, full_response)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    st.warning(f"⚠️ 저장 재시도 중... ({attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)
+                else:
+                    st.error(f"평어 저장 실패: {str(e)}")
+                    raise
+
+        st.success("2/2 완료")
+        log_p("평가 완료")
+
+    except Exception as e:
+        log_p(f"ERROR: 평가 중 오류 발생: {str(e)}")
+        st.error("평가 처리 중 오류가 발생했습니다. 다시 시도해주세요.")
 
 def add_message(all_messages, role, message, withGS : bool = True):
     """

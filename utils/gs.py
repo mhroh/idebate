@@ -3,6 +3,54 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import time
+from functools import wraps
+from gspread.exceptions import APIError
+
+def retry_on_rate_limit(max_retries=5, base_delay=1):
+    """
+    Google Sheets API rate limit 에러 발생 시 자동 재시도하는 데코레이터
+
+    Parameters:
+        max_retries (int): 최대 재시도 횟수 (기본값: 5)
+        base_delay (float): 기본 대기 시간(초) (기본값: 1)
+
+    Exponential backoff: 1초 → 2초 → 4초 → 8초 → 16초
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except APIError as e:
+                    # Rate limit (429) 또는 서버 에러 (5xx)인 경우만 재시도
+                    if attempt < max_retries - 1 and (
+                        'RATE_LIMIT_EXCEEDED' in str(e) or
+                        'quota' in str(e).lower() or
+                        (hasattr(e, 'response') and e.response.status_code in [429, 500, 502, 503])
+                    ):
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        st.warning(f"⚠️ 잠시 대기 중입니다... ({attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        # 재시도 불가능한 에러이거나 최대 재시도 횟수 초과
+                        st.error(f"Google Sheets 오류: {str(e)}")
+                        raise
+                except Exception as e:
+                    # 네트워크 에러 등 기타 오류
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        st.warning(f"⚠️ 연결 재시도 중... ({attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        st.error(f"오류 발생: {str(e)}")
+                        raise
+            return None
+        return wrapper
+    return decorator
 
 def get_authorize():
     """
@@ -102,9 +150,10 @@ def getSetupInfo():
     
     return temp
 
+@retry_on_rate_limit(max_retries=5, base_delay=1)
 def add_Content(role, content):
     """
-    대화 내용을 Google Sheets에 추가하는 함수입니다.
+    대화 내용을 Google Sheets에 추가하는 함수입니다. (재시도 로직 적용)
 
     Parameters:
         role (str): 메시지 작성자의 역할. "user" 또는 "assistant" 중 하나여야 합니다.
@@ -112,6 +161,8 @@ def add_Content(role, content):
 
     이 함수는 현재 시간, 역할, 그리고 메시지 내용을 포함하는 새로운 행을
     세션 상태에 저장된 Google Sheets 워크시트에 추가합니다.
+
+    Rate limit 에러 발생 시 최대 5번까지 자동 재시도합니다.
     """
     contents = [get_timestamp()]
 
@@ -164,9 +215,10 @@ def get_worksheet(doc, name):
 
     return new_worksheet
 
+@retry_on_rate_limit(max_retries=5, base_delay=1)
 def add_Hyperlink(doc, id, nick_name):
     """
-    Google Sheets 문서에 하이퍼링크를 추가하는 함수입니다.
+    Google Sheets 문서에 하이퍼링크를 추가하는 함수입니다. (재시도 로직 적용)
 
     Parameters:
         doc (gspread.Spreadsheet): 하이퍼링크를 추가할 Google Sheets 문서 객체
@@ -175,23 +227,28 @@ def add_Hyperlink(doc, id, nick_name):
 
     이 함수는 "수업요약" 시트의 A열 다음 빈 행에 하이퍼링크를 추가합니다.
     하이퍼링크는 같은 문서 내의 다른 시트로 연결됩니다.
+
+    Rate limit 에러 발생 시 최대 5번까지 자동 재시도합니다.
     """
 
-    
+
     sheet = doc.worksheet("수업요약")
     next_row = len(sheet.col_values(2)) + 1
     content = f'=HYPERLINK("#gid={id}", "{nick_name}")'
     sheet.update("A" + str(next_row), [[False]])
     sheet.update_acell("B" + str(next_row), content)
 
+@retry_on_rate_limit(max_retries=5, base_delay=1)
 def delete_message():
     """
-    대화 기록 중 마지막 대화를 삭제하는 함수입니다.
+    대화 기록 중 마지막 대화를 삭제하는 함수입니다. (재시도 로직 적용)
 
     이 함수는 다음과 같은 작업을 수행합니다:
     1. 세션 상태에서 현재 활성화된 워크시트를 가져옵니다.
     2. 워크시트의 첫 번째 열에서 데이터가 있는 마지막 행의 번호를 찾습니다.
     3. 해당 행을 삭제합니다(마지막 대화 삭제).
+
+    Rate limit 에러 발생 시 최대 5번까지 자동 재시도합니다.
     """
     target = st.session_state["sheet"]
     target_row = len(target.col_values(1))
