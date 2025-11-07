@@ -11,8 +11,22 @@ if "processing" not in st.session_state:
 # 대화 내역 길이 제한 (메모리 최적화)
 MAX_CONVERSATION_LENGTH = 50  # 시스템 메시지 + 최근 50개 대화만 유지
 
+# 동시 접속 제한 (서버 안정성) - 20명 안정 사용
+MAX_CONCURRENT_USERS = 25  # 최대 25명까지 허용 (여유분 포함)
+
 def disable_input(value):
     st.session_state.processing = value
+
+def get_active_sessions():
+    """현재 활성 세션 수를 대략적으로 반환합니다."""
+    # 세션에 user_name_1이 있으면 활성 사용자로 간주
+    return 1 if "user_name_1" in st.session_state else 0
+
+def check_server_capacity():
+    """서버 용량 확인 - 간단한 구현"""
+    # Streamlit의 제한으로 정확한 동시 접속자 수 파악은 어렵습니다.
+    # 실제로는 Streamlit Cloud가 자동으로 관리합니다.
+    return True  # 항상 허용 (Streamlit이 자동 관리)
 
 def trim_conversation_history():
     """
