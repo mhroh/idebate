@@ -5,3 +5,4 @@ langchain
 anthropic
 gspread
 google-auth
+streamlit-mermaid>=0.1.0
