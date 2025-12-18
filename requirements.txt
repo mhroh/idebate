@@ -1,8 +1,5 @@
 streamlit>=1.0
-streamlit_modal_input
-openai>=0.10.0
-langchain
-anthropic
-gspread
-google-auth
+anthropic>=0.21.0
+gspread>=5.0.0
+google-auth>=2.0.0
 streamlit-mermaid>=0.1.0
