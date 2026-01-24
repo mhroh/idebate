@@ -4,6 +4,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+@st.cache_resource
 def get_authorize():
     """
     Google Sheets API에 접근하기 위한 인증된 gspread 클라이언트를 생성하는 함수입니다.
@@ -19,8 +20,9 @@ def get_authorize():
     Note:
     - 이 함수는 Streamlit의 st.secrets를 사용하여 민감한 인증 정보를 안전하게 관리합니다.
     - Google Sheets API에 대한 접근 범위는 'https://www.googleapis.com/auth/spreadsheets'로 설정됩니다.
+    - @st.cache_resource로 캐싱되어 재사용됩니다.
     """
-    
+
     # 서비스 계정 key 정보를 딕셔너리 형태로 정의합니다.
     service_account_info = {
         "type": st.secrets["type"],
@@ -43,6 +45,7 @@ def get_authorize():
     # gspread 클라이언트 생성
     return gspread.authorize(creds)
 
+@st.cache_data(ttl=300)
 def getSetupInfo():
     """
     Google Sheets에서 설정 정보를 가져오는 함수입니다.
@@ -66,6 +69,7 @@ def getSetupInfo():
     - 이 함수는 st.secrets["sheet_url"]에 저장된 URL의 Google Sheets에서 정보를 가져옵니다.
     - "정보" 워크시트의 2번째 열에서 데이터를 읽어옵니다.
     - 데이터는 0부터 11까지의 인덱스로 구성되며, 각 인덱스는 주석에 설명된 정보를 나타냅니다.
+    - @st.cache_data로 캐싱되어 5분(300초)마다 새로고침됩니다.
     0 수업할 시트
     1 서비스 여부
     2 생성형AI
@@ -82,7 +86,7 @@ def getSetupInfo():
 
     gc = get_authorize()
     ws = gc.open_by_url(st.secrets["sheet_url"]).worksheet("정보")
-    
+
     # 정보 데이터 가져오기
     data = ws.col_values(2)
     temp = {}
@@ -97,8 +101,8 @@ def getSetupInfo():
     temp["system"] = data[8]
     temp["a_p"] = data[9]
     temp["e_p"] = data[10]
-    temp["stream"] = True if data[11].lower() == 'true' else False   
-    
+    temp["stream"] = True if data[11].lower() == 'true' else False
+
     return temp
 
 def add_Content(role, content):
