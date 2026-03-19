@@ -5,6 +5,7 @@ import anthropic
 from anthropic import APIError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
 from utils import gs
 import time
+from datetime import datetime
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
@@ -52,6 +53,23 @@ def process_data(function_name):
         function_name()
     st.success("완료.")
 
+def download_conversation_as_txt():
+    """
+    대화 내용을 txt 파일로 변환하는 함수입니다.
+
+    Returns:
+    str: 대화 내용이 담긴 텍스트 문자열
+    """
+    messages = st.session_state.messages[1:]  # 시스템 메시지 제외
+
+    # 텍스트 생성
+    txt_content = ""
+    for msg in messages:
+        role = "사용자" if msg["role"] == "user" else "AI"
+        txt_content += f"[{role}]\n{msg['content']}\n\n"
+
+    return txt_content
+
 
 def main():
     if "setupInfo" not in st.session_state:
@@ -69,13 +87,20 @@ def main():
         st.title("교육용 챗봇")
 
         api_key = st.session_state["setupInfo"]["key"]
-        user_name = st.text_input("대화명을 입력하세요:")
+        user_name = "User"  # 고정 사용자명
 
-        if api_key and user_name:
+        if api_key:
             initialize(api_key, user_name)
 
-        if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
-            process_data(end_conversation)
+        # 대화 저장 (TXT) 다운로드 버튼
+        if "messages" in st.session_state and len(st.session_state.messages) > 1:
+            st.download_button(
+                label="📥 대화 저장 (TXT)",
+                data=download_conversation_as_txt(),
+                file_name=f"conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                disabled=st.session_state.processing
+            )
         
         # Mermaid 시각화 도구 (Phase 1)
         st.divider()
@@ -114,15 +139,6 @@ def main():
                 st.markdown(message["content"])
 
     if prompt := st.chat_input("대화 내용을 입력해 주세요.", on_submit=disable_input, args=(True,), disabled=st.session_state.processing):
-        if not user_name:
-            st.warning('대화명을 입력해 주세요!', icon='⚠️')
-
-            time.sleep(3)
-            disable_input(False)
-            st.rerun()
-
-            return
-        
         add_message(st.session_state.messages, "user", prompt)
         
         with st.chat_message("user"):
@@ -326,8 +342,9 @@ def add_message(all_messages, role, message, withGS : bool = True):
     동시에 Google Sheets에도 해당 메시지를 저장합니다.
     """
     all_messages.append({"role": role, "content": message})
-    if withGS:
-        gs.add_Content(role, message)
+    # 구글 시트 자동 저장 비활성화 (복구 시 주석 제거)
+    # if withGS:
+    #     gs.add_Content(role, message)
 
 def delete_message():
     message = st.session_state.messages
