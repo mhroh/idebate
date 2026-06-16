@@ -76,31 +76,6 @@ def main():
 
         if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
             process_data(end_conversation)
-        
-        # Mermaid 시각화 도구 (Phase 1)
-        st.divider()
-        st.subheader("🎨 시각화 도구")
-        
-        if st.button("📊 테스트 차트 보기"):
-            st.session_state["show_test_chart"] = True
-        
-        # 수동 차트 생성
-        with st.expander("📝 수동 차트 만들기"):
-            manual_topic = st.text_input("토론 주제:", key="manual_topic")
-            manual_pros = st.text_area("찬성 논거 (한 줄에 하나씩):", key="manual_pros")
-            manual_cons = st.text_area("반대 논거 (한 줄에 하나씩):", key="manual_cons")
-            
-            if st.button("차트 생성", key="create_manual"):
-                if manual_topic:
-                    pros_list = [p.strip() for p in manual_pros.split("\n") if p.strip()]
-                    cons_list = [c.strip() for c in manual_cons.split("\n") if c.strip()]
-                    
-                    from mermaid_utils import create_debate_chart
-                    manual_chart = create_debate_chart(manual_topic, pros_list, cons_list)
-                    st.session_state["manual_chart"] = manual_chart
-                    st.session_state["show_manual_chart"] = True
-                else:
-                    st.warning("토론 주제를 입력해주세요!")
 
 
     # 시스템 메시지 초기화
@@ -334,29 +309,6 @@ def delete_message():
 
     while message[-1]["role"] == "user":
         message.pop()
-
-    # Mermaid 차트 표시 영역 (Phase 1)
-    if "show_test_chart" in st.session_state and st.session_state["show_test_chart"]:
-        st.divider()
-        st.subheader("🎨 Mermaid 테스트 차트")
-        from mermaid_utils import render_simple_chart
-        render_simple_chart()
-        
-        if st.button("닫기", key="close_test"):
-            st.session_state["show_test_chart"] = False
-            st.rerun()
-    
-    # 수동 생성 차트 표시
-    if "show_manual_chart" in st.session_state and st.session_state["show_manual_chart"]:
-        st.divider()
-        st.subheader("📝 수동 생성 차트")
-        
-        from streamlit_mermaid import st_mermaid
-        st_mermaid(st.session_state["manual_chart"])
-        
-        if st.button("닫기", key="close_manual"):
-            st.session_state["show_manual_chart"] = False
-            st.rerun()
 
 
 if __name__ == "__main__":
