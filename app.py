@@ -340,6 +340,7 @@ def execute_prompt(messages):
                         model = setupInfo['model'],
                         max_tokens = setupInfo['max_tokens'],
                         temperature = setupInfo['temperature'],
+                        cache_control = {"type": "ephemeral"},
                         system = setupInfo['system'],
                         messages = messages,
                         stream = setupInfo['stream']
