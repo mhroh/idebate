@@ -40,17 +40,40 @@ def format_message_meta(role, meta):
         return f"응답 시각 {timestamp_text} · 생성 소요 {elapsed_text}"
     return ""
 
+def clean_text_for_txt(text):
+    replacements = {
+        "1️⃣": "1.",
+        "2️⃣": "2.",
+        "3️⃣": "3.",
+        "🟦": "[찬성]",
+        "🟥": "[반대]",
+    }
+    cleaned = str(text)
+    for old, new in replacements.items():
+        cleaned = cleaned.replace(old, new)
+
+    return "".join(
+        char
+        for char in cleaned
+        if char == "\n" or char == "\t" or not (
+            0x1F000 <= ord(char) <= 0x1FAFF
+            or 0x2600 <= ord(char) <= 0x27BF
+            or ord(char) in (0x200D, 0x20E3)
+            or 0xFE00 <= ord(char) <= 0xFE0F
+        )
+    )
+
 def build_conversation_txt(messages, message_meta=None, user_name=None):
     created_at = now_kst().strftime("%Y-%m-%d %H:%M:%S KST")
-    display_name = user_name or "unknown"
+    display_name = clean_text_for_txt(user_name or "unknown")
     role_labels = {
         "user": "[학생]",
         "assistant": "[챗봇]",
     }
     lines = [
+        "=" * 60,
         f"대화명: {display_name}",
         f"생성 시각: {created_at}",
-        "",
     ]
 
     message_meta = message_meta or {}
@@ -60,11 +83,26 @@ def build_conversation_txt(messages, message_meta=None, user_name=None):
         if role not in role_labels:
             continue
 
-        content = str(message.get("content", "")).strip()
-        lines.append(role_labels[role])
-        meta_text = format_message_meta(role, message_meta.get(idx))
-        if meta_text:
-            lines.append(meta_text)
+        content = clean_text_for_txt(message.get("content", "")).strip()
+        meta = message_meta.get(idx) or {}
+        timestamp = meta.get("timestamp")
+        timestamp_text = timestamp.strftime("%H:%M:%S") if timestamp else "--:--:--"
+        elapsed_text = format_elapsed(meta.get("elapsed_seconds"))
+        lines.extend([
+            "=" * 60,
+            role_labels[role],
+        ])
+        if role == "user":
+            lines.append(f"입력 시각: {timestamp_text}")
+            lines.append(f"생각 소요: {elapsed_text}")
+        else:
+            lines.append(f"응답 시각: {timestamp_text}")
+            lines.append(f"생성 소요: {elapsed_text}")
+        lines.extend([
+            "------------",
+            "",
+            "내용:",
+        ])
         lines.append(content)
         lines.append("")
 
