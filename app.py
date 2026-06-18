@@ -5,12 +5,39 @@ import anthropic
 from anthropic import APIError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
 from utils import gs
 import time
+from datetime import datetime, timezone, timedelta
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
 def disable_input(value):
     st.session_state.processing = value
+
+def build_conversation_txt(messages, user_name=None):
+    kst = timezone(timedelta(hours=9))
+    created_at = datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S KST")
+    display_name = user_name or "unknown"
+    role_labels = {
+        "user": "[학생]",
+        "assistant": "[챗봇]",
+    }
+    lines = [
+        f"대화명: {display_name}",
+        f"생성 시각: {created_at}",
+        "",
+    ]
+
+    for message in messages:
+        role = message.get("role")
+        if role not in role_labels:
+            continue
+
+        content = str(message.get("content", "")).strip()
+        lines.append(role_labels[role])
+        lines.append(content)
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 def initialize(api_key, nick_name):
     """
@@ -53,7 +80,47 @@ def process_data(function_name):
     st.success("완료.")
 
 
+def hide_streamlit_chrome():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stToolbar"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stDecoration"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stStatusWidget"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stHeader"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        #MainMenu {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        footer {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main():
+    hide_streamlit_chrome()
+
     if "setupInfo" not in st.session_state:
         set_class_info()
         
@@ -76,6 +143,25 @@ def main():
 
         if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
             process_data(end_conversation)
+
+        if "messages" in st.session_state and len(st.session_state.messages) > 1:
+            conversation_user_name = st.session_state.get("user_name_1", user_name)
+            now_kst = datetime.now(timezone(timedelta(hours=9)))
+            safe_user_name = "".join(
+                char if char.isalnum() or char in ("-", "_") else "_"
+                for char in str(conversation_user_name or "unknown")
+            )
+            file_name = f"idebate_conversation_{safe_user_name}_{now_kst.strftime('%Y%m%d_%H%M%S')}.txt"
+            st.download_button(
+                "대화 TXT 다운로드",
+                data=build_conversation_txt(
+                    st.session_state.messages,
+                    conversation_user_name,
+                ).encode("utf-8-sig"),
+                file_name=file_name,
+                mime="text/plain",
+                disabled=st.session_state.processing,
+            )
 
 
     # 시스템 메시지 초기화
@@ -267,10 +353,10 @@ def end_conversation():
 
     # 종합평가
     st.success("1/2 작업중......")
-    add_message(messages, "user", a_p, withGS = False)
+    add_message(messages, "user", a_p)
     stream = execute_prompt(messages)
     full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
+    add_message(messages, "assistant", full_response)
     
     cell = sheet.find(st.session_state["user_name_1"], in_column = 1)
     sheet.update_cell(cell.row, cell.col + 1, full_response)
@@ -279,30 +365,21 @@ def end_conversation():
     # 평어
     st.success("2/2 작업중......")
     full_response = ""
-    add_message(messages, "user", e_p, withGS = False)
+    add_message(messages, "user", e_p)
     stream = execute_prompt(messages)
     full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
+    add_message(messages, "assistant", full_response)
 
     sheet.update_cell(cell.row, cell.col + 2, full_response)
     st.success("2/2 완료")
     log_p("평가 완료")
 
-def add_message(all_messages, role, message, withGS : bool = True):
+def add_message(all_messages, role, message):
     """
-    메시지를 대화 기록에 추가하고 Google Sheets에도 저장하는 함수입니다.
-
-    Parameters:
-    all_messages (list): 전체 대화 기록을 저장하는 리스트
-    role (str): 메시지 작성자의 역할 ("user" 또는 "assistant")
-    message (str): 추가할 메시지 내용
-
-    이 함수는 새 메시지를 all_messages 리스트에 추가하고,
-    동시에 Google Sheets에도 해당 메시지를 저장합니다.
+    메시지를 현재 브라우저 세션의 대화 기록에만 추가합니다.
+    Google Sheet 자동저장은 개인정보보호/속도 문제로 테스트 브랜치에서 비활성화했습니다.
     """
     all_messages.append({"role": role, "content": message})
-    if withGS:
-        gs.add_Content(role, message)
 
 def delete_message():
     message = st.session_state.messages
