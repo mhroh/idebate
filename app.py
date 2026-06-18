@@ -141,9 +141,6 @@ def main():
         if api_key and user_name:
             initialize(api_key, user_name)
 
-        if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
-            process_data(end_conversation)
-
         if "messages" in st.session_state and len(st.session_state.messages) > 1:
             conversation_user_name = st.session_state.get("user_name_1", user_name)
             now_kst = datetime.now(timezone(timedelta(hours=9)))
