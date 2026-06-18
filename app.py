@@ -5,12 +5,39 @@ import anthropic
 from anthropic import APIError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
 from utils import gs
 import time
+from datetime import datetime, timezone, timedelta
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
 def disable_input(value):
     st.session_state.processing = value
+
+def build_conversation_txt(messages, user_name=None):
+    kst = timezone(timedelta(hours=9))
+    created_at = datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S KST")
+    display_name = user_name or "unknown"
+    role_labels = {
+        "user": "[학생]",
+        "assistant": "[챗봇]",
+    }
+    lines = [
+        f"대화명: {display_name}",
+        f"생성 시각: {created_at}",
+        "",
+    ]
+
+    for message in messages:
+        role = message.get("role")
+        if role not in role_labels:
+            continue
+
+        content = str(message.get("content", "")).strip()
+        lines.append(role_labels[role])
+        lines.append(content)
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 def initialize(api_key, nick_name):
     """
@@ -76,6 +103,25 @@ def main():
 
         if st.button("대화 종료", on_click=disable_input, args=(True,), disabled=st.session_state.processing):
             process_data(end_conversation)
+
+        if "messages" in st.session_state and len(st.session_state.messages) > 1:
+            conversation_user_name = st.session_state.get("user_name_1", user_name)
+            now_kst = datetime.now(timezone(timedelta(hours=9)))
+            safe_user_name = "".join(
+                char if char.isalnum() or char in ("-", "_") else "_"
+                for char in str(conversation_user_name or "unknown")
+            )
+            file_name = f"idebate_conversation_{safe_user_name}_{now_kst.strftime('%Y%m%d_%H%M%S')}.txt"
+            st.download_button(
+                "대화 TXT 다운로드",
+                data=build_conversation_txt(
+                    st.session_state.messages,
+                    conversation_user_name,
+                ).encode("utf-8-sig"),
+                file_name=file_name,
+                mime="text/plain",
+                disabled=st.session_state.processing,
+            )
 
 
     # 시스템 메시지 초기화
