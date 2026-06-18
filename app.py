@@ -267,10 +267,10 @@ def end_conversation():
 
     # 종합평가
     st.success("1/2 작업중......")
-    add_message(messages, "user", a_p, withGS = False)
+    add_message(messages, "user", a_p)
     stream = execute_prompt(messages)
     full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
+    add_message(messages, "assistant", full_response)
     
     cell = sheet.find(st.session_state["user_name_1"], in_column = 1)
     sheet.update_cell(cell.row, cell.col + 1, full_response)
@@ -279,30 +279,21 @@ def end_conversation():
     # 평어
     st.success("2/2 작업중......")
     full_response = ""
-    add_message(messages, "user", e_p, withGS = False)
+    add_message(messages, "user", e_p)
     stream = execute_prompt(messages)
     full_response = message_processing(stream)
-    add_message(messages, "assistant", full_response, withGS = False)
+    add_message(messages, "assistant", full_response)
 
     sheet.update_cell(cell.row, cell.col + 2, full_response)
     st.success("2/2 완료")
     log_p("평가 완료")
 
-def add_message(all_messages, role, message, withGS : bool = True):
+def add_message(all_messages, role, message):
     """
-    메시지를 대화 기록에 추가하고 Google Sheets에도 저장하는 함수입니다.
-
-    Parameters:
-    all_messages (list): 전체 대화 기록을 저장하는 리스트
-    role (str): 메시지 작성자의 역할 ("user" 또는 "assistant")
-    message (str): 추가할 메시지 내용
-
-    이 함수는 새 메시지를 all_messages 리스트에 추가하고,
-    동시에 Google Sheets에도 해당 메시지를 저장합니다.
+    메시지를 현재 브라우저 세션의 대화 기록에만 추가합니다.
+    Google Sheet 자동저장은 개인정보보호/속도 문제로 테스트 브랜치에서 비활성화했습니다.
     """
     all_messages.append({"role": role, "content": message})
-    if withGS:
-        gs.add_Content(role, message)
 
 def delete_message():
     message = st.session_state.messages
