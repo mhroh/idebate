@@ -13,9 +13,35 @@ if "processing" not in st.session_state:
 def disable_input(value):
     st.session_state.processing = value
 
-def build_conversation_txt(messages, user_name=None):
+def now_kst():
     kst = timezone(timedelta(hours=9))
-    created_at = datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S KST")
+    return datetime.now(kst)
+
+def format_elapsed(seconds):
+    if seconds is None:
+        return "-"
+
+    seconds = max(0, int(round(seconds)))
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+def format_message_meta(role, meta):
+    meta = meta or {}
+
+    timestamp = meta.get("timestamp")
+    timestamp_text = timestamp.strftime("%H:%M:%S") if timestamp else "--:--:--"
+    elapsed_text = format_elapsed(meta.get("elapsed_seconds"))
+    if role == "user":
+        return f"입력 시각 {timestamp_text} · 생각 소요 {elapsed_text}"
+    if role == "assistant":
+        return f"응답 시각 {timestamp_text} · 생성 소요 {elapsed_text}"
+    return ""
+
+def build_conversation_txt(messages, message_meta=None, user_name=None):
+    created_at = now_kst().strftime("%Y-%m-%d %H:%M:%S KST")
     display_name = user_name or "unknown"
     role_labels = {
         "user": "[학생]",
@@ -27,13 +53,18 @@ def build_conversation_txt(messages, user_name=None):
         "",
     ]
 
-    for message in messages:
+    message_meta = message_meta or {}
+
+    for idx, message in enumerate(messages):
         role = message.get("role")
         if role not in role_labels:
             continue
 
         content = str(message.get("content", "")).strip()
         lines.append(role_labels[role])
+        meta_text = format_message_meta(role, message_meta.get(idx))
+        if meta_text:
+            lines.append(meta_text)
         lines.append(content)
         lines.append("")
 
@@ -123,7 +154,13 @@ def main():
 
     if "setupInfo" not in st.session_state:
         set_class_info()
-        
+
+    if "message_meta" not in st.session_state:
+        st.session_state.message_meta = {}
+
+    if "last_assistant_done_at" not in st.session_state:
+        st.session_state.last_assistant_done_at = now_kst()
+
     if st.session_state["setupInfo"]["serviceOnOff"] == "off":
         st.title("❤🥰지금은 휴식중입니다.🥰❤")
         return
@@ -143,16 +180,17 @@ def main():
 
         if "messages" in st.session_state and len(st.session_state.messages) > 1:
             conversation_user_name = st.session_state.get("user_name_1", user_name)
-            now_kst = datetime.now(timezone(timedelta(hours=9)))
+            current_time = now_kst()
             safe_user_name = "".join(
                 char if char.isalnum() or char in ("-", "_") else "_"
                 for char in str(conversation_user_name or "unknown")
             )
-            file_name = f"idebate_conversation_{safe_user_name}_{now_kst.strftime('%Y%m%d_%H%M%S')}.txt"
+            file_name = f"idebate_conversation_{safe_user_name}_{current_time.strftime('%Y%m%d_%H%M%S')}.txt"
             st.download_button(
                 "대화 TXT 다운로드",
                 data=build_conversation_txt(
                     st.session_state.messages,
+                    st.session_state.message_meta,
                     conversation_user_name,
                 ).encode("utf-8-sig"),
                 file_name=file_name,
@@ -170,6 +208,13 @@ def main():
         if idx > 0:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                if message["role"] == "user":
+                    meta_text = format_message_meta(
+                        message["role"],
+                        st.session_state.message_meta.get(idx),
+                    )
+                    if meta_text:
+                        st.caption(meta_text)
 
     if prompt := st.chat_input("대화 내용을 입력해 주세요.", on_submit=disable_input, args=(True,), disabled=st.session_state.processing):
         if not user_name:
@@ -180,11 +225,19 @@ def main():
             st.rerun()
 
             return
-        
+
+        user_message_idx = len(st.session_state.messages)
+        user_timestamp = now_kst()
+        last_assistant_done_at = st.session_state.get("last_assistant_done_at")
         add_message(st.session_state.messages, "user", prompt)
-        
+        st.session_state.message_meta[user_message_idx] = {
+            "timestamp": user_timestamp,
+            "elapsed_seconds": (user_timestamp - last_assistant_done_at).total_seconds() if last_assistant_done_at else None,
+        }
+
         with st.chat_message("user"):
             st.markdown(prompt)
+            st.caption(format_message_meta("user", st.session_state.message_meta[user_message_idx]))
 
         # OpenAI 모델 호출
         if "api_key" in st.session_state:
@@ -194,6 +247,7 @@ def main():
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
                 message_placeholder.write("......")
+                assistant_started_at = time.perf_counter()
                 stream = execute_prompt(st.session_state.messages[1:])
 
                 if stream == None:
@@ -208,7 +262,15 @@ def main():
                 full_response = message_processing(stream, message_placeholder)
                 message_placeholder.write(full_response)
 
+            assistant_message_idx = len(st.session_state.messages)
+            assistant_timestamp = now_kst()
+            assistant_elapsed = time.perf_counter() - assistant_started_at
             add_message(st.session_state.messages, "assistant", full_response)
+            st.session_state.message_meta[assistant_message_idx] = {
+                "timestamp": assistant_timestamp,
+                "elapsed_seconds": assistant_elapsed,
+            }
+            st.session_state.last_assistant_done_at = assistant_timestamp
             disable_input(False)
             st.rerun()
 
@@ -382,7 +444,9 @@ def delete_message():
     message = st.session_state.messages
 
     while message[-1]["role"] == "user":
+        removed_idx = len(message) - 1
         message.pop()
+        st.session_state.message_meta.pop(removed_idx, None)
 
 
 if __name__ == "__main__":
