@@ -112,6 +112,33 @@ def hide_streamlit_chrome():
             display: none !important;
             visibility: hidden !important;
         }
+        /* Hide Streamlit Cloud floating badges / feedback / app action buttons */
+        a[href*="streamlit.io"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        a[href*="share.streamlit.io"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        button[title*="Streamlit" i],
+        button[aria-label*="Streamlit" i],
+        button[title*="feedback" i],
+        button[aria-label*="feedback" i],
+        button[title*="manage" i],
+        button[aria-label*="manage" i],
+        div[role="button"][title*="Streamlit" i],
+        div[role="button"][aria-label*="Streamlit" i],
+        div[role="button"][title*="feedback" i],
+        div[role="button"][aria-label*="feedback" i],
+        div[role="button"][title*="manage" i],
+        div[role="button"][aria-label*="manage" i] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
