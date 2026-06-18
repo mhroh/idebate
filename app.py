@@ -80,7 +80,47 @@ def process_data(function_name):
     st.success("완료.")
 
 
+def hide_streamlit_chrome():
+    st.markdown(
+        """
+        <style>
+        [data-testid="stToolbar"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stDecoration"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stStatusWidget"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        [data-testid="stHeader"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+        }
+        #MainMenu {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        footer {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main():
+    hide_streamlit_chrome()
+
     if "setupInfo" not in st.session_state:
         set_class_info()
         
