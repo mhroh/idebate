@@ -173,6 +173,15 @@ def hide_streamlit_chrome():
             visibility: hidden !important;
             height: 0 !important;
         }
+        @media (max-width: 768px) {
+            [data-testid="stHeader"] {
+                display: flex !important;
+                visibility: visible !important;
+                height: auto !important;
+                background: transparent !important;
+                box-shadow: none !important;
+            }
+        }
         #MainMenu {
             display: none !important;
             visibility: hidden !important;
