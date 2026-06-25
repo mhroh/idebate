@@ -208,6 +208,9 @@ def main():
     if "last_assistant_done_at" not in st.session_state:
         st.session_state.last_assistant_done_at = now_kst()
 
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = ""
+
     if st.session_state["setupInfo"]["serviceOnOff"] == "off":
         st.title("❤🥰지금은 휴식중입니다.🥰❤")
         return
@@ -220,7 +223,11 @@ def main():
         st.title("교육용 챗봇")
 
         api_key = st.session_state["setupInfo"]["key"]
-        user_name = st.text_input("대화명을 입력하세요:")
+        sidebar_name = st.text_input(
+            "대화명을 입력하세요:",
+            key="sidebar_user_name",
+        )
+        user_name = sidebar_name.strip() or st.session_state.get("user_name", "").strip()
 
         if api_key and user_name:
             initialize(api_key, user_name)
@@ -250,6 +257,47 @@ def main():
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "system", "content": st.session_state["setupInfo"]['system']}]
 
+    top_col_name, top_col_download = st.columns([2, 1])
+    with top_col_name:
+        main_name = st.text_input(
+            "대화명",
+            key="main_user_name",
+            label_visibility="collapsed",
+            placeholder="대화명",
+            disabled=st.session_state.processing,
+        )
+
+    user_name = (
+        main_name.strip()
+        or sidebar_name.strip()
+        or st.session_state.get("user_name", "").strip()
+    )
+    if user_name:
+        st.session_state["user_name"] = user_name
+        if api_key:
+            initialize(api_key, user_name)
+
+    with top_col_download:
+        if len(st.session_state.messages) > 1:
+            conversation_user_name = st.session_state.get("user_name_1", user_name)
+            current_time = now_kst()
+            safe_user_name = "".join(
+                char if char.isalnum() or char in ("-", "_") else "_"
+                for char in str(conversation_user_name or "unknown")
+            )
+            file_name = f"idebate_conversation_{safe_user_name}_{current_time.strftime('%Y%m%d_%H%M%S')}.txt"
+            st.download_button(
+                "TXT",
+                data=build_conversation_txt(
+                    st.session_state.messages,
+                    st.session_state.message_meta,
+                    conversation_user_name,
+                ).encode("utf-8-sig"),
+                file_name=file_name,
+                mime="text/plain",
+                disabled=st.session_state.processing,
+            )
+
     # 챗 메시지 출력
     for idx, message in enumerate(st.session_state.messages):
         if idx > 0:
@@ -264,6 +312,7 @@ def main():
                         st.caption(meta_text)
 
     if prompt := st.chat_input("대화 내용을 입력해 주세요.", on_submit=disable_input, args=(True,), disabled=st.session_state.processing):
+        user_name = st.session_state.get("user_name", "").strip()
         if not user_name:
             st.warning('대화명을 입력해 주세요!', icon='⚠️')
 
