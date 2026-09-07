@@ -4,6 +4,7 @@ from streamlit import logger
 import anthropic
 from anthropic import APIError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
 from utils import gs
+from utils.voice import voice_input
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -12,6 +13,10 @@ if "processing" not in st.session_state:
 
 def disable_input(value):
     st.session_state.processing = value
+
+def submit_prompt():
+    st.session_state.pending_prompt = st.session_state.chat_prompt
+    disable_input(True)
 
 def now_kst():
     kst = timezone(timedelta(hours=9))
@@ -298,6 +303,8 @@ def main():
                 disabled=st.session_state.processing,
             )
 
+    voice_event = voice_input(bool(user_name) and not st.session_state.processing)
+
     # 챗 메시지 출력
     for idx, message in enumerate(st.session_state.messages):
         if idx > 0:
@@ -311,7 +318,13 @@ def main():
                     if meta_text:
                         st.caption(meta_text)
 
-    if prompt := st.chat_input("대화 내용을 입력해 주세요.", on_submit=disable_input, args=(True,), disabled=st.session_state.processing):
+    st.chat_input("대화 내용을 입력해 주세요.", key="chat_prompt", on_submit=submit_prompt, disabled=st.session_state.processing)
+    prompt = st.session_state.pop("pending_prompt", None)
+    voice_id = None
+    if not prompt and voice_event:
+        voice_id, prompt = voice_event
+        disable_input(True)
+    if prompt:
         user_name = st.session_state.get("user_name", "").strip()
         if not user_name:
             st.warning('대화명을 입력해 주세요!', icon='⚠️')
@@ -367,6 +380,8 @@ def main():
                 "elapsed_seconds": assistant_elapsed,
             }
             st.session_state.last_assistant_done_at = assistant_timestamp
+            if voice_id:
+                st.session_state.voice_reply = {"id": voice_id, "text": full_response}
             disable_input(False)
             st.rerun()
 
