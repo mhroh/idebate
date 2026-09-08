@@ -1,15 +1,30 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font:14px system-ui,sans-serif;margin:4px;color:#263445}button{font:inherit;padding:10px 15px;border:1px solid #ccd3dc;border-radius:10px;background:#fff;cursor:pointer}button:disabled{opacity:.5;cursor:default}#mic{background:#edf5ff}#submit{background:#1762b5;color:white}#status{margin:8px 0}textarea{box-sizing:border-box;width:100%;min-height:80px;padding:10px;font:16px system-ui;border:1px solid #ccd3dc;border-radius:8px;resize:vertical}small{display:block;color:#687484;margin-top:8px}[hidden]{display:none!important}</style></head>
+<style>
+:root{--text:#263445;--background:#fff;--secondary:#edf5ff}
+body{font:14px system-ui,sans-serif;margin:0;padding:4px;box-sizing:border-box;color:var(--text);background:var(--background)}
+button{font:inherit;min-height:44px;padding:8px 12px;border:1px solid #8895a6;border-radius:10px;background:var(--background);color:var(--text);cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.5;cursor:default}#mic{background:var(--secondary)}#submit{background:#1762b5;color:white}
+#status{margin:5px 0;font-size:12px;line-height:1.4}
+textarea{display:block;box-sizing:border-box;width:100%;height:54px;padding:6px 8px;font:16px system-ui;border:1px solid #8895a6;border-radius:8px;resize:none;color:var(--text);background:var(--background)}
+details{font-size:11px;margin-top:4px;line-height:1.4}summary{cursor:pointer}details p{margin:4px 0}[hidden]{display:none!important}
+</style></head>
 <body><button id="mic" disabled>🎙 말하기</button> <button id="cancel" hidden>취소</button> <button id="submit" disabled>보내기</button>
 <div id="status" role="status" aria-live="polite">음성 기능 준비 중</div>
-<textarea id="transcript" aria-label="음성으로 입력한 질문" placeholder="말한 내용을 확인·수정한 뒤 보내기를 눌러 주세요." maxlength="10000"></textarea>
-<small>자동 전송·음성 출력 없이 사용합니다. Chrome 권장 · 음성은 브라우저 제공자의 인식 서비스에서 처리될 수 있습니다.</small>
+<textarea rows="2" id="transcript" aria-label="음성으로 입력한 질문" placeholder="말한 내용을 확인·수정한 뒤 보내기를 눌러 주세요." maxlength="10000"></textarea>
+<details><summary>음성 입력 안내</summary><p>말한 내용을 확인한 뒤 보내기를 눌러 주세요. 자동 전송·음성 출력 없이 사용합니다. Chrome 권장 · 음성은 브라우저 제공자의 인식 서비스에서 처리될 수 있습니다.</p></details>
 <script>
 const mic=document.getElementById('mic'), cancel=document.getElementById('cancel'), submit=document.getElementById('submit'), statusEl=document.getElementById('status'), transcript=document.getElementById('transcript');
 const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 let args={}, recognition=null, listening=false, waiting=false, cancelled=false, failed=false, finalText='', baseText='', pending=null, watchdog=null;
 const send=(type,data)=>parent.postMessage({isStreamlitMessage:true,type,...data},'*');
+// Measure wrapped status/help text too, so narrow screens never clip controls.
+let frameHeight=0;
+function resizeFrame(){
+ const height=Math.ceil(document.body.getBoundingClientRect().height);
+ if(height!==frameHeight){frameHeight=height;send('streamlit:setFrameHeight',{height});}
+}
+new ResizeObserver(resizeFrame).observe(document.body);
 function controls(){
  mic.disabled=!Recognition||!args.enabled||waiting;
  mic.textContent=listening?'말 마침':'🎙 말하기';cancel.hidden=!listening;
@@ -40,10 +55,14 @@ submit.onclick=()=>{
 window.addEventListener('message',e=>{
  if(e.source!==parent||e.data?.type!=='streamlit:render')return;
  args=e.data.args||{};
+ const theme=e.data.theme||{};
+ for(const [name,value] of Object.entries({'--text':theme.textColor,'--background':theme.backgroundColor,'--secondary':theme.secondaryBackgroundColor})){
+  if(value)document.documentElement.style.setProperty(name,value);
+ }
  if(args.reply?.id===pending&&pending){waiting=false;clearTimeout(watchdog);pending=null;transcript.value='';}
  if(!listening&&!waiting){if(!args.enabled)statusEl.textContent=args.busy?'답변을 생성하고 있어요.':'대화명을 먼저 입력해 주세요.';else if(!Recognition)statusEl.textContent='이 브라우저는 음성 인식을 지원하지 않습니다. 글자로 입력하거나 Chrome에서 열어 주세요.';else ready();}
- controls();send('streamlit:setFrameHeight',{height:255});
+ controls();resizeFrame();
 });
 window.addEventListener('pagehide',()=>{cancelled=true;recognition?.abort();clearTimeout(watchdog);});
-send('streamlit:componentReady',{apiVersion:1});send('streamlit:setFrameHeight',{height:255});
+send('streamlit:componentReady',{apiVersion:1});resizeFrame();
 </script></body></html>
