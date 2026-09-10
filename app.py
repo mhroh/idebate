@@ -210,6 +210,14 @@ def main():
     if "message_meta" not in st.session_state:
         st.session_state.message_meta = {}
 
+    if "token_usage" not in st.session_state:
+        st.session_state.token_usage = {
+            "input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 0,
+        }
+
     if "last_assistant_done_at" not in st.session_state:
         st.session_state.last_assistant_done_at = now_kst()
 
@@ -302,6 +310,30 @@ def main():
                 mime="text/plain",
                 disabled=st.session_state.processing,
             )
+
+    if st.session_state.get("response_model"):
+        usage = st.session_state.token_usage
+        total_input = sum(
+            usage[field]
+            for field in (
+                "input_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            )
+        )
+        hit_rate = (
+            100 * usage["cache_read_input_tokens"] / total_input
+            if total_input
+            else 0
+        )
+        st.caption(
+            f"응답 모델: {st.session_state['response_model']} · "
+            f"일반 입력 {usage['input_tokens']:,} · "
+            f"캐시 생성 {usage['cache_creation_input_tokens']:,} · "
+            f"캐시 재사용 {usage['cache_read_input_tokens']:,} · "
+            f"출력 {usage['output_tokens']:,} · "
+            f"입력 캐시 적중률 {hit_rate:.1f}%"
+        )
 
     # 챗 메시지 출력
     for idx, message in enumerate(st.session_state.messages):
@@ -477,23 +509,41 @@ def message_processing(stream, output = None):
     """
     log_p("메시지 스트리밍 중")
     full_response = ""
+    request_usage = {
+        "input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 0,
+    }
 
     for chunk in stream:
         if chunk.type == "content_block_delta":
             if getattr(chunk.delta, "type", None) == "text_delta":
                 full_response += chunk.delta.text
         elif chunk.type == "message_start":
-            # 메시지 시작 이벤트 처리 (필요한 경우)
-            pass
+            st.session_state.response_model = chunk.message.model
+            usage = getattr(chunk.message, "usage", None)
+            for field in (
+                "input_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            ):
+                request_usage[field] = int(getattr(usage, field, 0) or 0)
         elif chunk.type == "message_delta":
-            # 메시지 델타 이벤트 처리 (필요한 경우)
-            pass
+            usage = getattr(chunk, "usage", None)
+            request_usage["output_tokens"] = int(
+                getattr(usage, "output_tokens", 0) or 0
+            )
         elif chunk.type == "message_stop":
             # 메시지 종료 이벤트 처리 (필요한 경우)
             break
         if output != None:
             output.write(full_response + "▌")
     log_p("메시지 스트리밍 완료")
+
+    totals = st.session_state.setdefault("token_usage", {})
+    for field, value in request_usage.items():
+        totals[field] = int(totals.get(field, 0) or 0) + value
 
     return full_response
 
