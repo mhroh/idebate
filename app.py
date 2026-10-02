@@ -443,7 +443,7 @@ def execute_prompt(messages):
     
     try:
         request_params = {
-            "model": setupInfo["model"],
+            "model": "claude-sonnet-5-5",
             "max_tokens": setupInfo["max_tokens"],
             "cache_control": {"type": "ephemeral"},
             "system": setupInfo["system"],
@@ -451,10 +451,9 @@ def execute_prompt(messages):
             "stream": setupInfo["stream"],
         }
 
-        if setupInfo["model"] == "claude-sonnet-5":
-            request_params["thinking"] = {"type": "disabled"}
-        else:
-            request_params["temperature"] = setupInfo["temperature"]
+        # Sonnet 5.5 uses between_tools to skip up-front thinking and rejects
+        # non-default sampling parameters. Keep classroom responses economical.
+        request_params["thinking"] = {"type": "between_tools"}
 
         stream = client.messages.create(**request_params)
 
